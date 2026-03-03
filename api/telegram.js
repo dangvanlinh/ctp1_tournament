@@ -147,6 +147,26 @@ module.exports = async (req, res) => {
   const db = getDB();
 
   // Commands
+  if (/^\/debug\b/i.test(text)) {
+    const rawChatId = message.chat.id;
+    const rawThreadId = message.message_thread_id || null;
+    const envChatId = process.env.TELEGRAM_CHAT_ID || '(not set)';
+    const envThreadId = process.env.TELEGRAM_THREAD_ID || '(not set)';
+    await tgSend(message.chat.id, // always reply to actual chat for debug
+      `🔍 <b>Debug Info</b>\n\n` +
+      `<b>Tin nhắn đến từ:</b>\n` +
+      `  chat_id: <code>${rawChatId}</code>\n` +
+      `  thread_id: <code>${rawThreadId}</code>\n\n` +
+      `<b>Env vars:</b>\n` +
+      `  TELEGRAM_CHAT_ID: <code>${envChatId}</code>\n` +
+      `  TELEGRAM_THREAD_ID: <code>${envThreadId}</code>\n\n` +
+      `<b>Bot sẽ gửi đến:</b>\n` +
+      `  chatId: <code>${chatId}</code>\n` +
+      `  threadId: <code>${threadId}</code>`,
+      rawThreadId
+    );
+    return res.status(200).json({ ok: true });
+  }
   if (/^\/bang\b/i.test(text))      { await handleStandings(db, chatId, threadId);  return res.status(200).json({ ok: true }); }
   if (/^\/capdat\b/i.test(text))    { await handlePairs(db, chatId, threadId);       return res.status(200).json({ ok: true }); }
   if (/^\/danhsach\b/i.test(text))  { await handleMemberList(db, chatId, threadId);  return res.status(200).json({ ok: true }); }
