@@ -5,11 +5,13 @@ function todayVN() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' });
 }
 
-async function tgSend(chatId, text) {
+async function tgSend(chatId, text, threadId = null) {
+  const payload = { chat_id: chatId, text, parse_mode: 'HTML' };
+  if (threadId) payload.message_thread_id = threadId;
   await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -28,20 +30,20 @@ async function getMemberPoints(db, memberId) {
   return pts;
 }
 
-async function handleWin(db, chatId, rawName) {
+async function handleWin(db, chatId, rawName, threadId) {
   const { data: members } = await db.from('members').select('id, name');
   const member = (members || []).find(
     m => m.name.toLowerCase() === rawName.toLowerCase()
   );
 
   if (!member) {
-    return tgSend(chatId, `❌ Không tìm thấy thành viên <b>${rawName}</b>\nDùng /danhsach để xem danh sách.`);
+    return tgSend(chatId, `❌ Không tìm thấy thành viên <b>${rawName}</b>\nDùng /danhsach để xem danh sách.`, threadId);
   }
 
   const today = todayVN();
   const { data: round } = await db.from('rounds').select('id').eq('date', today).single();
   if (!round) {
-    return tgSend(chatId, `❌ Chưa có bảng đấu hôm nay.\nVào web để tạo cặp đấu trước nhé!`);
+    return tgSend(chatId, `❌ Chưa có bảng đấu hôm nay.\nVào web để tạo cặp đấu trước nhé!`, threadId);
   }
 
   const { data: pair } = await db.from('pairs')
@@ -52,14 +54,14 @@ async function handleWin(db, chatId, rawName) {
     .single();
 
   if (!pair) {
-    return tgSend(chatId, `❌ Không tìm thấy cặp đấu của <b>${member.name}</b> hôm nay.`);
+    return tgSend(chatId, `❌ Không tìm thấy cặp đấu của <b>${member.name}</b> hôm nay.`, threadId);
   }
 
   if (pair.result !== null) {
     const existing = pair.result === 'draw' ? 'Hòa'
       : pair.result === 'p1' ? (pair.p1_id === member.id ? `${member.name} thắng` : 'Đối thủ thắng')
       : (pair.p2_id === member.id ? `${member.name} thắng` : 'Đối thủ thắng');
-    return tgSend(chatId, `⚠️ Cặp đấu này đã có kết quả: <b>${existing}</b>\nDùng web để sửa nếu cần.`);
+    return tgSend(chatId, `⚠️ Cặp đấu này đã có kết quả: <b>${existing}</b>\nDùng web để sửa nếu cần.`, threadId);
   }
 
   const result = pair.p1_id === member.id ? 'p1' : 'p2';
@@ -71,11 +73,12 @@ async function handleWin(db, chatId, rawName) {
   const totalPts = await getMemberPoints(db, member.id);
   return tgSend(chatId,
     `✅ Đã ghi nhận!\n\n🏆 <b>${member.name}</b> thắng vs <b>${opponent?.name || '?'}</b>\n` +
-    `+3 điểm → Tổng: <b>${totalPts} điểm</b>`
+    `+3 điểm → Tổng: <b>${totalPts} điểm</b>`,
+    threadId
   );
 }
 
-async function handleStandings(db, chatId) {
+async function handleStandings(db, chatId, threadId) {
   const [{ data: members }, { data: pairs }] = await Promise.all([
     db.from('members').select('id, name').order('created_at'),
     db.from('pairs').select('p1_id, p2_id, result').not('result', 'is', null).eq('is_bye', false),
@@ -97,14 +100,14 @@ async function handleStandings(db, chatId) {
   const lines = sorted.map((p, i) =>
     `${medals[i] || `${i + 1}.`} <b>${p.name}</b> — ${p.pts} điểm (${p.played} trận)`
   );
-  return tgSend(chatId, `🏆 <b>Bảng Xếp Hạng</b>\n\n${lines.join('\n')}`);
+  return tgSend(chatId, `🏆 <b>Bảng Xếp Hạng</b>\n\n${lines.join('\n')}`, threadId);
 }
 
-async function handlePairs(db, chatId) {
+async function handlePairs(db, chatId, threadId) {
   const today = todayVN();
   const { data: round } = await db.from('rounds').select('id, date').eq('date', today).single();
   if (!round) {
-    return tgSend(chatId, `📅 Chưa có bảng đấu hôm nay (${today}).\nVào web để tạo cặp đấu nhé!`);
+    return tgSend(chatId, `📅 Chưa có bảng đấu hôm nay (${today}).\nVào web để tạo cặp đấu nhé!`, threadId);
   }
 
   const { data: pairs } = await db.from('pairs')
@@ -122,14 +125,14 @@ async function handlePairs(db, chatId) {
   const bye = (pairs || []).find(p => p.is_bye);
   if (bye) lines.push(`• <b>${map[bye.p1_id]?.name}</b> — nghỉ hôm nay`);
 
-  return tgSend(chatId, `⚔️ <b>Bảng đấu hôm nay (${today})</b>\n\n${lines.join('\n')}`);
+  return tgSend(chatId, `⚔️ <b>Bảng đấu hôm nay (${today})</b>\n\n${lines.join('\n')}`, threadId);
 }
 
-async function handleMemberList(db, chatId) {
+async function handleMemberList(db, chatId, threadId) {
   const { data: members } = await db.from('members').select('name').order('created_at');
-  if (!members?.length) return tgSend(chatId, 'Chưa có thành viên nào.');
+  if (!members?.length) return tgSend(chatId, 'Chưa có thành viên nào.', threadId);
   const list = (members || []).map((m, i) => `${i + 1}. ${m.name}`).join('\n');
-  return tgSend(chatId, `👥 <b>Danh sách thành viên</b>\n\n${list}`);
+  return tgSend(chatId, `👥 <b>Danh sách thành viên</b>\n\n${list}`, threadId);
 }
 
 module.exports = async (req, res) => {
@@ -139,13 +142,14 @@ module.exports = async (req, res) => {
   if (!message?.text) return res.status(200).json({ ok: true });
 
   const chatId = message.chat.id;
+  const threadId = message.message_thread_id || null;
   const text = message.text.trim();
   const db = getDB();
 
   // Commands
-  if (/^\/bang\b/i.test(text))      { await handleStandings(db, chatId); return res.status(200).json({ ok: true }); }
-  if (/^\/capdat\b/i.test(text))    { await handlePairs(db, chatId);     return res.status(200).json({ ok: true }); }
-  if (/^\/danhsach\b/i.test(text))  { await handleMemberList(db, chatId);return res.status(200).json({ ok: true }); }
+  if (/^\/bang\b/i.test(text))      { await handleStandings(db, chatId, threadId);  return res.status(200).json({ ok: true }); }
+  if (/^\/capdat\b/i.test(text))    { await handlePairs(db, chatId, threadId);       return res.status(200).json({ ok: true }); }
+  if (/^\/danhsach\b/i.test(text))  { await handleMemberList(db, chatId, threadId);  return res.status(200).json({ ok: true }); }
   if (/^\/help\b/i.test(text)) {
     await tgSend(chatId,
       `🎮 <b>Cờ Tỷ Phú Bot</b>\n\n` +
@@ -154,7 +158,8 @@ module.exports = async (req, res) => {
       `<b>Lệnh:</b>\n` +
       `  /capdat — xem cặp đấu hôm nay\n` +
       `  /bang — bảng xếp hạng\n` +
-      `  /danhsach — danh sách thành viên`
+      `  /danhsach — danh sách thành viên`,
+      threadId
     );
     return res.status(200).json({ ok: true });
   }
@@ -162,7 +167,7 @@ module.exports = async (req, res) => {
   // Pattern: "Name +1"
   const winMatch = text.match(/^(.+?)\s*\+1\s*$/);
   if (winMatch) {
-    await handleWin(db, chatId, winMatch[1].trim());
+    await handleWin(db, chatId, winMatch[1].trim(), threadId);
   }
 
   return res.status(200).json({ ok: true });
