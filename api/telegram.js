@@ -141,8 +141,8 @@ module.exports = async (req, res) => {
   const message = req.body?.message || req.body?.edited_message;
   if (!message?.text) return res.status(200).json({ ok: true });
 
-  const chatId = process.env.TELEGRAM_CHAT_ID || message.chat.id;
-  const threadId = process.env.TELEGRAM_THREAD_ID ? parseInt(process.env.TELEGRAM_THREAD_ID) : (message.message_thread_id || null);
+  const chatId = process.env.TELEGRAM_CHAT_ID || '-1003642678430';
+  const threadId = process.env.TELEGRAM_THREAD_ID ? parseInt(process.env.TELEGRAM_THREAD_ID) : 2;
   const text = message.text.trim();
   const db = getDB();
 
