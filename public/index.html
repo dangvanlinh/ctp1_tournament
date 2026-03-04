@@ -179,8 +179,7 @@
       <div class="pairing-header">
         <h2 id="pairing-date-title">Cặp đấu hôm nay</h2>
         <div class="pairing-actions">
-          <button class="btn btn-outline btn-sm" onclick="generatePairing(true)" id="btn-reset-round" style="display:none">🔄 Tạo lại</button>
-          <button class="btn btn-gold btn-sm" onclick="generatePairing(false)" id="btn-generate">🎲 Tạo Cặp Đấu</button>
+          <button class="btn btn-gold btn-sm" onclick="generatePairing()" id="btn-generate">🎲 Tạo Cặp Đấu</button>
         </div>
       </div>
       <div id="pairing-area">
@@ -305,13 +304,9 @@ async function loadPairing() {
   renderPairing();
 }
 
-async function generatePairing(force = false) {
-  if (force && currentRound) {
-    const hasResults = currentRound.pairs.some(p => p.result !== null && !p.is_bye);
-    if (hasResults && !confirm('Đã có kết quả hôm nay. Tạo lại sẽ xóa kết quả cũ. Tiếp tục?')) return;
-  }
+async function generatePairing() {
   try {
-    currentRound = await api('/api/rounds', 'POST', { date: todayStr(), force: true });
+    currentRound = await api('/api/rounds', 'POST', { date: todayStr(), force: false });
     renderPairing();
     toast('🎲 Đã tạo cặp đấu ngẫu nhiên!');
   } catch (e) { toast('Lỗi: ' + e.message); }
@@ -330,20 +325,19 @@ async function setResult(pairId, result) {
 
 function renderPairing() {
   const area = $('pairing-area');
-  const btnGen   = $('btn-generate');
-  const btnReset = $('btn-reset-round');
+  const btnGen = $('btn-generate');
 
   if (!currentRound) {
-    btnGen.style.display = ''; btnReset.style.display = 'none';
+    btnGen.style.display = '';
     area.innerHTML = `<div class="empty-pairing">
       <div class="icon">🎲</div>
       <p>Chưa có cặp đấu nào cho hôm nay.</p>
-      <button class="btn btn-gold" onclick="generatePairing(false)">Tạo Cặp Đấu Ngẫu Nhiên</button>
+      <button class="btn btn-gold" onclick="generatePairing()">Tạo Cặp Đấu Ngẫu Nhiên</button>
     </div>`;
     return;
   }
 
-  btnGen.style.display = 'none'; btnReset.style.display = '';
+  btnGen.style.display = 'none';
 
   const activePairs = currentRound.pairs.filter(p => !p.is_bye);
   const byePair     = currentRound.pairs.find(p => p.is_bye);
