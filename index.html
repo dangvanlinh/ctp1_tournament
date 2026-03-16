@@ -266,6 +266,49 @@
     .stat-box .s-val { font-size: 1.5rem; font-weight: 700; color: var(--gold); }
     .stat-box .s-label { font-size: 0.72rem; color: var(--text-dim); margin-top: 2px; }
 
+    /* ── Command bar ── */
+    .cmd-bar {
+      display: flex; gap: 10px; margin-bottom: 16px;
+    }
+    .cmd-input {
+      flex: 1; background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 9px 14px; border-radius: 6px; font-size: 0.88rem;
+      outline: none; transition: border-color .2s; font-family: 'Consolas', monospace;
+    }
+    .cmd-input:focus { border-color: var(--blue); }
+    .cmd-input::placeholder { color: var(--text-dim); font-family: 'Segoe UI', system-ui, sans-serif; }
+    .cmd-hint { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 12px; }
+    .cmd-hint code { background: var(--surface2); padding: 1px 5px; border-radius: 3px; font-size: 0.78rem; }
+
+    /* ── Bot match entries ── */
+    .bot-section { margin-bottom: 10px; }
+    .bot-section-title {
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.8px;
+      color: var(--text-dim); margin-bottom: 8px;
+    }
+    .bot-match-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 9px 14px;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 6px; font-size: 0.85rem;
+    }
+    .bot-match-card .bm-player { flex: 1; font-weight: 600; }
+    .bot-match-card .bm-vs { color: var(--text-dim); font-size: 0.75rem; }
+    .bot-match-card .bm-bot { color: var(--text-dim); font-size: 0.85rem; }
+    .bot-match-card .bm-result {
+      font-size: 0.75rem; font-weight: 700; padding: 3px 9px;
+      border-radius: 5px; white-space: nowrap;
+    }
+    .bm-result.win  { color: var(--green); background: #1a3a1a; border: 1px solid var(--green); }
+    .bm-result.draw { color: var(--gold);  background: #2a2a1a; border: 1px solid var(--gold); }
+    .bm-result.loss { color: var(--red);   background: #3a1a1a; border: 1px solid var(--red); }
+    .bm-remove {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 2px;
+      transition: color .15s;
+    }
+    .bm-remove:hover { color: var(--red); }
+
     @media (max-width: 600px) {
       nav button { padding: 12px 12px; font-size: 0.82rem; }
       .match-card { flex-wrap: wrap; }
@@ -311,6 +354,19 @@
 
   <!-- ══ PAIRING ══ -->
   <div class="tab-content" id="tab-content-pairing">
+    <div class="card" id="cmd-card">
+      <div class="card-title">Ghi nhận kết quả với Bot</div>
+      <div class="cmd-bar">
+        <input type="text" class="cmd-input" id="cmd-input"
+               placeholder="Nhập lệnh, ví dụ: /win 'Tên' +1"
+               onkeydown="if(event.key==='Enter') runCommand()" />
+        <button class="btn btn-gold" onclick="runCommand()">Chạy</button>
+      </div>
+      <div class="cmd-hint">
+        Lệnh: <code>/win 'tên' +N</code> &nbsp;|&nbsp; <code>/draw 'tên' +N</code> &nbsp;|&nbsp; <code>/lose 'tên' +N</code>
+      </div>
+      <div id="bot-matches-area"></div>
+    </div>
     <div class="card">
       <div class="pairing-header">
         <h2 id="pairing-date-title">Cặp đấu hôm nay</h2>
@@ -474,6 +530,99 @@ function renderMembers() {
       <button class="rm" onclick="removeMember('${m.id}')" title="Xóa">×</button>
     </div>
   `).join('');
+}
+
+// ─── Bot Commands ────────────────────────────────────────────────────
+function parseCommand(raw) {
+  // Accepts: /win 'name' +N  or  /win name +N  (N defaults to 1)
+  const m = raw.trim().match(/^\/(\w+)\s+['"]?(.+?)['"]?\s*(?:\+(\d+))?\s*$/i);
+  if (!m) return null;
+  const cmd = m[1].toLowerCase();
+  const name = m[2].trim();
+  const count = parseInt(m[3] || '1', 10);
+  const resultMap = { win: 'win', draw: 'draw', lose: 'loss', loss: 'loss' };
+  const result = resultMap[cmd];
+  if (!result) return null;
+  return { name, result, count };
+}
+
+function ensureTodayRound() {
+  let round = state.rounds.find(r => r.date === todayStr());
+  if (!round) {
+    round = { date: todayStr(), pairs: [], bye: null, botMatches: [] };
+    state.rounds.push(round);
+  }
+  if (!round.botMatches) round.botMatches = [];
+  return round;
+}
+
+function runCommand() {
+  const input = document.getElementById('cmd-input');
+  const raw = input.value.trim();
+  if (!raw) return;
+
+  const parsed = parseCommand(raw);
+  if (!parsed) {
+    toast('❌ Lệnh không hợp lệ. Ví dụ: /win \'Tên\' +1'); return;
+  }
+
+  const member = state.members.find(m => m.name.toLowerCase() === parsed.name.toLowerCase());
+  if (!member) {
+    toast(`❌ Không tìm thấy thành viên: "${parsed.name}"`); return;
+  }
+
+  const round = ensureTodayRound();
+  for (let i = 0; i < parsed.count; i++) {
+    round.botMatches.push({ playerId: member.id, result: parsed.result });
+  }
+  save();
+  input.value = '';
+  renderBotMatches();
+  renderStandings();
+  renderHistory();
+
+  const label = parsed.result === 'win' ? 'Thắng' : parsed.result === 'draw' ? 'Hòa' : 'Thua';
+  toast(`✅ Ghi nhận ${parsed.count}x ${label} cho ${member.name}`);
+}
+
+function removeBotMatch(roundDate, idx) {
+  const round = state.rounds.find(r => r.date === roundDate);
+  if (!round || !round.botMatches) return;
+  round.botMatches.splice(idx, 1);
+  save();
+  renderBotMatches();
+  renderStandings();
+  renderHistory();
+}
+
+function renderBotMatches() {
+  const area = document.getElementById('bot-matches-area');
+  const round = state.rounds.find(r => r.date === todayStr());
+  const bm = round && round.botMatches ? round.botMatches : [];
+
+  if (bm.length === 0) {
+    area.innerHTML = '<span class="empty-hint text-sm">Chưa có kết quả bot nào hôm nay.</span>';
+    return;
+  }
+
+  const labelMap = { win: ['Thắng', 'win'], draw: ['Hòa', 'draw'], loss: ['Thua', 'loss'] };
+
+  area.innerHTML = `<div class="bot-section">
+    <div class="bot-section-title">Kết quả vs Bot hôm nay (${bm.length} trận)</div>
+    ${bm.map((bm, i) => {
+      const member = getMember(bm.playerId);
+      if (!member) return '';
+      const [label, cls] = labelMap[bm.result] || ['?', ''];
+      return `<div class="bot-match-card">
+        <div class="av" style="background:${member.color};width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.68rem;font-weight:700;color:#000;flex-shrink:0">${initials(member.name)}</div>
+        <span class="bm-player">${member.name}</span>
+        <span class="bm-vs">vs</span>
+        <span class="bm-bot">🤖 Bot</span>
+        <span class="bm-result ${cls}">${label}</span>
+        <button class="bm-remove" onclick="removeBotMatch('${round.date}',${i})" title="Xóa">×</button>
+      </div>`;
+    }).join('')}
+  </div>`;
 }
 
 // ─── Pairing ─────────────────────────────────────────────────────────
@@ -644,6 +793,7 @@ function getStandings() {
   return state.members.map(m => {
     let played = 0, wins = 0, draws = 0, losses = 0, points = 0;
     state.rounds.forEach(r => {
+      // Normal matches
       r.pairs.forEach(p => {
         if (p.result === null) return;
         const isP1 = p.p1 === m.id, isP2 = p.p2 === m.id;
@@ -652,6 +802,14 @@ function getStandings() {
         if (p.result === 'draw') { draws++; points++; }
         else if ((isP1 && p.result === 'p1') || (isP2 && p.result === 'p2')) { wins++; points += 3; }
         else { losses++; }
+      });
+      // Bot matches
+      (r.botMatches || []).forEach(bm => {
+        if (bm.playerId !== m.id) return;
+        played++;
+        if (bm.result === 'win')  { wins++;   points += 3; }
+        if (bm.result === 'draw') { draws++;  points += 1; }
+        if (bm.result === 'loss') { losses++; }
       });
     });
     return { ...m, played, wins, draws, losses, points };
@@ -700,7 +858,7 @@ function renderStandings() {
 function renderHistory() {
   const area = document.getElementById('history-area');
   const roundsWithResults = state.rounds
-    .filter(r => r.pairs.some(p => p.result !== null))
+    .filter(r => r.pairs.some(p => p.result !== null) || (r.botMatches && r.botMatches.length > 0))
     .slice().reverse();
 
   if (roundsWithResults.length === 0) {
@@ -724,10 +882,25 @@ function renderHistory() {
       </div>`;
     }).join('');
 
+    const botMatches = (r.botMatches || []).map(bm => {
+      const member = getMember(bm.playerId);
+      if (!member) return '';
+      let cls = '', label = '';
+      if (bm.result === 'win')  { cls = 'winner'; label = '+3/+0'; }
+      if (bm.result === 'draw') { cls = '';       label = '+1/+1'; }
+      if (bm.result === 'loss') { cls = 'loser';  label = '+0/+3'; }
+      return `<div class="history-match">
+        <span class="hm-player ${cls}">${member.name}</span>
+        <span class="hm-vs">vs</span>
+        <span class="hm-player" style="color:var(--text-dim)">🤖 Bot</span>
+        <span class="hm-result">${label}</span>
+      </div>`;
+    }).join('');
+
     const isToday = r.date === todayStr();
     return `<div class="history-day">
       <div class="history-day-label">${formatDate(r.date)}${isToday ? ' — Hôm nay' : ''}</div>
-      ${matches}
+      ${matches}${botMatches}
     </div>`;
   }).join('');
 }
@@ -739,7 +912,7 @@ function switchTab(name) {
   document.getElementById(`tab-content-${name}`).classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
 
-  if (name === 'pairing')   renderPairing();
+  if (name === 'pairing')   { renderPairing(); renderBotMatches(); }
   if (name === 'standings') renderStandings();
   if (name === 'history')   renderHistory();
 }
@@ -755,6 +928,7 @@ function init() {
 
   renderMembers();
   renderPairing();
+  renderBotMatches();
   renderStandings();
   renderHistory();
 }
